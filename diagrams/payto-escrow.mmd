@@ -1,0 +1,22 @@
+
+sequenceDiagram
+    autonumber
+    participant Seller
+    participant Escrow as Escrow Contract
+    participant Relayer
+    participant QuickStream as QuickStream PayTo APIs
+    participant Bank as Payer Bank (MMS)
+    participant Buyer
+
+    Seller->>Escrow: openEscrow(buyer, nft, tokenId, price, correlationId)
+    Seller->>Escrow: depositNFT(id)
+    Escrow-->>Relayer: Event PayToAgreementRequested(id, correlationId)
+    Relayer->>QuickStream: POST /customers/{id}/payto-agreements
+    QuickStream-->>Bank: Notify Agreement for Authorization
+    Bank-->>QuickStream: Agreement Authorized
+    Relayer->>Escrow: confirmAgreement(id, agreementToken)
+    Escrow-->>Relayer: Event PayToPaymentRequested(id, correlationId, agreementToken)
+    Relayer->>QuickStream: POST /transactions (endToEndId=correlationId, agreementToken)
+    QuickStream-->>Relayer: Payment webhook (success)
+    Relayer->>Escrow: confirmPayment(id, receipt, amount, "AUD")
+    Escrow->>Buyer: safeTransferFrom(NFT)
