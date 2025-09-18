@@ -10,7 +10,8 @@ This repository contains a production-ready ERC-721 escrow smart contract integr
 
 <img width="1890" height="606" alt="image" src="https://github.com/user-attachments/assets/484db5e6-ff6f-41d8-91a5-a0c0ed5e6912" />
 
-# sequenceDiagram
+# Mermaid flowchart
+    sequenceDiagram
     autonumber
     participant Seller
     participant Escrow as Escrow Contract
