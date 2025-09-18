@@ -52,6 +52,6 @@ npm hardhat test
 
 
 ## Test outcomes
-<img width="1890" height="606" alt="image" src="https://github.com/user-attachments/assets/732838ea-f68b-4f08-a9ee-5c1a49d5a946" />
+<img width="1080" height="606" alt="image" src="https://github.com/user-attachments/assets/732838ea-f68b-4f08-a9ee-5c1a49d5a946" />
 
 
