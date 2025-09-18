@@ -1,0 +1,11 @@
+{
+  "name": "escrow",
+  "version": "1.0.0",
+  "devDependencies": {
+    "hardhat": "^2.26.3"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}
