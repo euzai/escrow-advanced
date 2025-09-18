@@ -65,11 +65,8 @@ scripts/
 
 ## Install & test
 ```bash
-npm i
-npm run compile
-npm test
+npx hardhat compile
+npm hardhat test
 ```
-## Security notes
-- Only `OPERATOR_ROLE` can call `confirmAgreement` / `confirmPayment`. Use a multisig or a locked-down service account.
-- Consider adding allowlists, pausability, and/or rate-limiting at the relayer.
+
 
