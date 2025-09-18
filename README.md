@@ -1,7 +1,7 @@
 
 # Escrow Advanced (PayTo-enabled)
 
-This repository contains a production-ready ERC-721 escrow smart contract integrated with **PayTo** payment APIs via a mock relayer service.
+This repository contains a test ERC-721 escrow smart contract integrated with **PayTo** payment APIs via a mock relayer service.
 
 - Contract uses **OpenZeppelin Contracts v5.x** imports. See OZ docs.  
 - Hardhat project with tests that mocks relayer that calls PayTo APIs based on emitted on-chain events.
