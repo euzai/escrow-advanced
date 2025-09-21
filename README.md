@@ -42,12 +42,14 @@ scripts/
 
 ## Prerequisites
 - Node.js 18+ (Hardhat 2.x)  
-- pnpm / npm / yarn.
+- pnpm / npm / yarn
 
 ## Install & test
 ```bash
+npm install @nomicfoundation/hardhat-toolbox
+npm install @openzeppelin/contracts
 npx hardhat compile
-npm hardhat test
+npx hardhat test
 ```
 
 
