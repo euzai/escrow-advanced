@@ -52,8 +52,28 @@ npx hardhat compile
 npx hardhat test
 ```
 
+## Updates 20250930:
+Security Fix: Added NFT refund mechanisms with timeouts (7 days for agreement, 30 days for payment)
+
+Storage Optimisation: Removed redundant string storage, saving ~100+ gas per operation
+
+Enhanced Validation: Added checks for zero prices, empty strings, and correlation ID verification
+
+Better State Management: Added Refunded state and new functions for timeout-based refunds
+
+Emergency Admin Tools: Added emergencyRefund() for stuck transactions
+
+Comprehensive Testing: Expanded from 1 test to 28 tests covering all edge cases
+
+Gas Savings:
+- Reduced depositNFT gas by ~15k
+- Reduced confirmAgreement gas by ~10k
+- Optimized struct packing with uint64 timestamps
+  
+Other Changes: Functions now require correlationIdRaw parameter for verification: **depositNFT(id, correlationIdRaw)** and **confirmAgreement(id, correlationIdRaw, agreementToken)**
 
 ## Test outcomes
-<img width="800" height="606" alt="image" src="https://github.com/user-attachments/assets/732838ea-f68b-4f08-a9ee-5c1a49d5a946" />
+<img width="884" height="804" alt="image" src="https://github.com/user-attachments/assets/a3202a9c-0861-4143-b278-362d39aa3e76" />
+<img width="885" height="758" alt="image" src="https://github.com/user-attachments/assets/1206bf49-90e7-42b3-be2b-aba7d9f9928a" />
 
 
