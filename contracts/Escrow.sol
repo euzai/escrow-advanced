@@ -13,13 +13,19 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  */
 contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    
+    // Default timeouts (can be adjusted per deal if needed)
+    uint256 public constant DEFAULT_AGREEMENT_TIMEOUT = 7 days;
+    uint256 public constant DEFAULT_PAYMENT_TIMEOUT = 30 days;
+    
     enum State {
         None,
         Opened,
         NftDeposited,
         AgreementConfirmed,
         Paid,
-        Cancelled
+        Cancelled,
+        Refunded
     }
 
     struct Deal {
@@ -28,12 +34,10 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         address nft;
         uint256 tokenId;
         uint256 priceCents;           // informational metadata (AUD cents)
-        string correlationIdRaw;      // e.g. "INV-123456790" (PayTo endToEndId)
         bytes32 correlationIdHash;    // keccak256(correlationIdRaw)
         bytes32 agreementTokenHash;   // keccak256(agreementToken)
-        bool nftDeposited;
-        bool agreementConfirmed;
-        bool paymentConfirmed;
+        uint64 depositTimestamp;      // when NFT was deposited
+        uint64 agreementTimestamp;    // when agreement was confirmed
         State state;
     }
 
@@ -49,6 +53,11 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         uint256 priceCents,
         string correlationIdRaw,
         bytes32 correlationIdHash
+    );
+    event NftDeposited(
+        uint256 indexed id,
+        address indexed nft,
+        uint256 indexed tokenId
     );
     event PayToAgreementRequested(
         uint256 indexed id,
@@ -74,9 +83,11 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     );
     event NftReleased(uint256 indexed id, address indexed to);
     event EscrowCancelled(uint256 indexed id);
+    event NftRefunded(uint256 indexed id, address indexed to);
 
     error NotSeller();
     error NotBuyer();
+    error NotSellerOrAdmin();
     error WrongState(State required, State current);
     error InvalidNFT();
     error AlreadyDeposited();
@@ -84,6 +95,9 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     error AlreadyPaid();
     error ZeroAddress();
     error NotApproved();
+    error InvalidPrice();
+    error EmptyString();
+    error TimeoutNotReached();
 
     constructor(address operator) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -104,6 +118,9 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         string calldata correlationIdRaw
     ) external returns (uint256 id) {
         if (buyer == address(0) || nft == address(0)) revert ZeroAddress();
+        if (priceCents == 0) revert InvalidPrice();
+        if (bytes(correlationIdRaw).length == 0) revert EmptyString();
+        
         id = ++_nextId;
         bytes32 chash = keccak256(bytes(correlationIdRaw));
 
@@ -113,12 +130,10 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
             nft: nft,
             tokenId: tokenId,
             priceCents: priceCents,
-            correlationIdRaw: correlationIdRaw,
             correlationIdHash: chash,
             agreementTokenHash: bytes32(0),
-            nftDeposited: false,
-            agreementConfirmed: false,
-            paymentConfirmed: false,
+            depositTimestamp: 0,
+            agreementTimestamp: 0,
             state: State.Opened
         });
 
@@ -138,44 +153,50 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
      * @notice Seller deposits the NFT into escrow (requires prior approval on the NFT contract).
      * Emits PayToAgreementRequested for the relayer to create a PayTo Agreement.
      */
-    function depositNFT(uint256 id) external {
+    function depositNFT(uint256 id, string calldata correlationIdRaw) external {
         Deal storage d = _deals[id];
         if (d.state != State.Opened) revert WrongState(State.Opened, d.state);
         if (msg.sender != d.seller) revert NotSeller();
-        if (d.nftDeposited) revert AlreadyDeposited();
+        
+        // Verify correlation ID matches
+        if (keccak256(bytes(correlationIdRaw)) != d.correlationIdHash) revert EmptyString();
         
         IERC721 nft = IERC721(d.nft);
         if (nft.ownerOf(d.tokenId) != msg.sender) revert InvalidNFT();
-        // Check if the escrow contract is approved to transfer the NFT
         if (nft.getApproved(d.tokenId) != address(this)) revert NotApproved();
 
-        // Use safeTransferFrom to ensure the NFT is received by the contract
         nft.safeTransferFrom(msg.sender, address(this), d.tokenId);
 
-        d.nftDeposited = true;
+        d.depositTimestamp = uint64(block.timestamp);
         d.state = State.NftDeposited;
-        emit PayToAgreementRequested(id, d.correlationIdRaw, d.correlationIdHash);
+        
+        emit NftDeposited(id, d.nft, d.tokenId);
+        emit PayToAgreementRequested(id, correlationIdRaw, d.correlationIdHash);
     }
 
     /**
      * @notice Called by OPERATOR when PayTo Agreement is confirmed off-chain.
      * Stores the hash of agreementToken and emits PayToPaymentRequested.
      */
-    function confirmAgreement(uint256 id, string calldata agreementToken)
-        external
-        onlyRole(OPERATOR_ROLE)
-    {
+    function confirmAgreement(
+        uint256 id,
+        string calldata correlationIdRaw,
+        string calldata agreementToken
+    ) external onlyRole(OPERATOR_ROLE) {
         Deal storage d = _deals[id];
         if (d.state != State.NftDeposited) revert WrongState(State.NftDeposited, d.state);
-        if (d.agreementConfirmed) revert AlreadyConfirmed();
+        if (bytes(agreementToken).length == 0) revert EmptyString();
+        
+        // Verify correlation ID matches
+        if (keccak256(bytes(correlationIdRaw)) != d.correlationIdHash) revert EmptyString();
 
         bytes32 tokenHash = keccak256(bytes(agreementToken));
         d.agreementTokenHash = tokenHash;
-        d.agreementConfirmed = true;
+        d.agreementTimestamp = uint64(block.timestamp);
         d.state = State.AgreementConfirmed;
 
         emit AgreementConfirmed(id, agreementToken, tokenHash);
-        emit PayToPaymentRequested(id, d.correlationIdRaw, d.correlationIdHash, agreementToken);
+        emit PayToPaymentRequested(id, correlationIdRaw, d.correlationIdHash, agreementToken);
     }
 
     /**
@@ -190,9 +211,8 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     ) external onlyRole(OPERATOR_ROLE) nonReentrant {
         Deal storage d = _deals[id];
         if (d.state != State.AgreementConfirmed) revert WrongState(State.AgreementConfirmed, d.state);
-        if (d.paymentConfirmed) revert AlreadyPaid();
+        if (bytes(receiptReference).length == 0 || bytes(currency).length == 0) revert EmptyString();
 
-        d.paymentConfirmed = true;
         d.state = State.Paid;
         emit PaymentConfirmed(id, receiptReference, amountCents, currency);
 
@@ -201,21 +221,97 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     }
 
     /**
-     * @notice Optional: Seller may cancel before deposit (or admin in emergencies).
+     * @notice Seller or admin can cancel before deposit.
      */
     function cancel(uint256 id) external {
         Deal storage d = _deals[id];
         if (d.state != State.Opened) revert WrongState(State.Opened, d.state);
-        if (msg.sender != d.seller && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) revert NotSeller();
+        if (msg.sender != d.seller && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert NotSellerOrAdmin();
+        }
+        
         d.state = State.Cancelled;
         emit EscrowCancelled(id);
     }
 
-    // -------- Views -------- //
-    function getDeal(uint256 id) external view returns (Deal memory) { return _deals[id]; }
-    function nextId() external view returns (uint256) { return _nextId + 1; }
+    /**
+     * @notice Allows seller to reclaim NFT if agreement not confirmed within timeout.
+     * Or if payment not confirmed within timeout after agreement.
+     */
+    function refundNFT(uint256 id) external nonReentrant {
+        Deal storage d = _deals[id];
+        if (msg.sender != d.seller && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert NotSellerOrAdmin();
+        }
 
-    // ERC721 Receiver
+        // Check if refund is allowed based on state and timeouts
+        if (d.state == State.NftDeposited) {
+            // Agreement timeout
+            if (block.timestamp < d.depositTimestamp + DEFAULT_AGREEMENT_TIMEOUT) {
+                revert TimeoutNotReached();
+            }
+        } else if (d.state == State.AgreementConfirmed) {
+            // Payment timeout
+            if (block.timestamp < d.agreementTimestamp + DEFAULT_PAYMENT_TIMEOUT) {
+                revert TimeoutNotReached();
+            }
+        } else {
+            revert WrongState(State.NftDeposited, d.state);
+        }
+
+        d.state = State.Refunded;
+        
+        IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId);
+        emit NftRefunded(id, d.seller);
+    }
+
+    /**
+     * @notice Emergency admin function to cancel and refund NFT if deposited.
+     */
+    function emergencyRefund(uint256 id) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        Deal storage d = _deals[id];
+        
+        // Can only emergency refund if not already paid
+        if (d.state == State.Paid || d.state == State.Refunded) {
+            revert WrongState(State.NftDeposited, d.state);
+        }
+        
+        State oldState = d.state;
+        d.state = State.Refunded;
+        
+        // Only transfer NFT if it was actually deposited
+        if (oldState == State.NftDeposited || oldState == State.AgreementConfirmed) {
+            IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId);
+            emit NftRefunded(id, d.seller);
+        }
+        
+        emit EscrowCancelled(id);
+    }
+
+    // -------- Views -------- //
+    
+    function getDeal(uint256 id) external view returns (Deal memory) {
+        return _deals[id];
+    }
+    
+    function nextId() external view returns (uint256) {
+        return _nextId + 1;
+    }
+    
+    function canRefund(uint256 id) external view returns (bool) {
+        Deal storage d = _deals[id];
+        
+        if (d.state == State.NftDeposited) {
+            return block.timestamp >= d.depositTimestamp + DEFAULT_AGREEMENT_TIMEOUT;
+        } else if (d.state == State.AgreementConfirmed) {
+            return block.timestamp >= d.agreementTimestamp + DEFAULT_PAYMENT_TIMEOUT;
+        }
+        
+        return false;
+    }
+
+    // -------- ERC721 Receiver -------- //
+    
     function onERC721Received(
         address,
         address,
