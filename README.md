@@ -63,7 +63,7 @@ Better State Management: Added Refunded state and new functions for timeout-base
 
 Emergency Admin Tools: Added emergencyRefund() for stuck transactions
 
-Comprehensive Testing: Expanded from 1 test to 28 tests covering all edge cases
+Comprehensive Testing: Expanded from 1 test to 44 tests covering all edge cases
 
 Gas Savings:
 - Reduced depositNFT gas by ~15k
@@ -73,7 +73,8 @@ Gas Savings:
 Other Changes: Functions now require correlationIdRaw parameter for verification: **depositNFT(id, correlationIdRaw)** and **confirmAgreement(id, correlationIdRaw, agreementToken)**
 
 ## Test outcomes
-<img width="884" height="804" alt="image" src="https://github.com/user-attachments/assets/a3202a9c-0861-4143-b278-362d39aa3e76" />
-<img width="885" height="758" alt="image" src="https://github.com/user-attachments/assets/1206bf49-90e7-42b3-be2b-aba7d9f9928a" />
+<img width="904" height="979" alt="image" src="https://github.com/user-attachments/assets/8a751c3d-e3f3-4855-b030-e8d22e5bb25f" />
+<img width="901" height="930" alt="image" src="https://github.com/user-attachments/assets/0654c935-ce00-413e-bd0d-f8d250d2b05c" />
+
 
 
