@@ -63,7 +63,7 @@ Better State Management: Added Refunded state and new functions for timeout-base
 
 Emergency Admin Tools: Added emergencyRefund() for stuck transactions
 
-Comprehensive Testing: Expanded from 1 test to 44 tests covering all edge cases
+Comprehensive Testing: Expanded from 1 test to 44 tests covering all edge cases. The comprehensive set of unit tests now covers the "Happy Path," input validation, access control, state transitions, and edge cases like timeouts and emergency refunds.
 
 Gas Savings:
 - Reduced depositNFT gas by ~15k
