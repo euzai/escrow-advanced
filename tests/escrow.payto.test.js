@@ -9,6 +9,17 @@ describe("Escrow x PayTo", function () {
   const correlation = "INV-123456790";
   const agreementToken = "C01791640642293";
   const priceCents = 100_000; // $1000.00
+  
+  // State constants for readability (matching Escrow.sol enum)
+  const State = {
+    None: 0n,
+    Opened: 1n,
+    NftDeposited: 2n,
+    AgreementConfirmed: 3n,
+    Paid: 4n,
+    Cancelled: 5n,
+    Refunded: 6n
+  };
 
   beforeEach(async function () {
     [admin, seller, buyer, operator, other] = await ethers.getSigners();
@@ -38,7 +49,8 @@ describe("Escrow x PayTo", function () {
           priceCents,
           correlation
         )
-      ).to.emit(escrow, "EscrowOpened");
+      ).to.emit(escrow, "EscrowOpened")
+       .withArgs(1, seller.address, buyer.address, await nft.getAddress(), tokenId, priceCents, correlation, ethers.keccak256(ethers.toUtf8Bytes(correlation))); // Added correlation verification
 
       // Approve and deposit NFT
       await nft.connect(seller).approve(await escrow.getAddress(), tokenId);
@@ -65,7 +77,7 @@ describe("Escrow x PayTo", function () {
       expect(await nft.ownerOf(tokenId)).to.equal(buyer.address);
       
       const deal = await escrow.getDeal(1);
-      expect(deal.state).to.equal(4); // State.Paid
+      expect(deal.state).to.equal(State.Paid); // Use constant
     });
   });
 
@@ -253,7 +265,7 @@ describe("Escrow x PayTo", function () {
         .to.emit(escrow, "EscrowCancelled");
 
       const deal = await escrow.getDeal(1);
-      expect(deal.state).to.equal(5); // State.Cancelled
+      expect(deal.state).to.equal(State.Cancelled); // Use constant
     });
 
     it("should allow admin to cancel before deposit", async function () {
@@ -479,7 +491,7 @@ describe("Escrow x PayTo", function () {
       expect(deal.nft).to.equal(await nft.getAddress());
       expect(deal.tokenId).to.equal(tokenId);
       expect(deal.priceCents).to.equal(priceCents);
-      expect(deal.state).to.equal(1); // State.Opened
+      expect(deal.state).to.equal(State.Opened); // Use constant
     });
 
     it("should return correct canRefund status", async function () {
@@ -549,7 +561,7 @@ describe("Escrow x PayTo", function () {
 
       await expect(
         escrow.connect(seller).depositNFT(1, "WRONG-ID")
-      ).to.be.revertedWithCustomError(escrow, "EmptyString");
+      ).to.be.revertedWithCustomError(escrow, "MismatchedCorrelation"); // Changed from EmptyString
     });
 
     it("should reject confirmAgreement with wrong correlation ID", async function () {
@@ -566,7 +578,7 @@ describe("Escrow x PayTo", function () {
 
       await expect(
         escrow.connect(operator).confirmAgreement(1, "WRONG-ID", agreementToken)
-      ).to.be.revertedWithCustomError(escrow, "EmptyString");
+      ).to.be.revertedWithCustomError(escrow, "MismatchedCorrelation"); // Changed from EmptyString
     });
   });
 });
