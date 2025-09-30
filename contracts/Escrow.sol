@@ -93,7 +93,15 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
     error InvalidPrice();
     error EmptyString();
     error TimeoutNotReached();
-    error MismatchedCorrelation(); // New Error
+    error MismatchedCorrelation();
+    error PaymentAmountMismatch(uint256 expected, uint256 received); 
+    error DealNotFound(uint256 id); 
+
+    // New Modifier
+    modifier dealExists(uint256 id) {
+        if (_deals[id].state == State.None) revert DealNotFound(id);
+        _;
+    }
 
     constructor(address operator) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -148,7 +156,10 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
      * @notice Seller deposits the NFT into escrow (requires prior approval on the NFT contract).
      * Emits PayToAgreementRequested for the relayer to create a PayTo Agreement.
      */
-    function depositNFT(uint256 id, string calldata correlationIdRaw) external {
+    function depositNFT(
+        uint256 id, 
+        string calldata correlationIdRaw
+    ) external dealExists(id) { 
         Deal storage d = _deals[id];
         if (d.state != State.Opened) revert WrongState(State.Opened, d.state);
         if (msg.sender != d.seller) revert NotSeller();
@@ -156,7 +167,8 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         // Verify correlation ID matches
         if (keccak256(bytes(correlationIdRaw)) != d.correlationIdHash) revert MismatchedCorrelation();
         
-        IERC721 nftContract = IERC721(d.nft); // Cached
+        // Cache interface for gas optimization
+        IERC721 nftContract = IERC721(d.nft); 
         if (nftContract.ownerOf(d.tokenId) != msg.sender) revert InvalidNFT();
         if (nftContract.getApproved(d.tokenId) != address(this)) revert NotApproved();
 
@@ -176,7 +188,7 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         uint256 id,
         string calldata correlationIdRaw,
         string calldata agreementToken
-    ) external onlyRole(OPERATOR_ROLE) {
+    ) external onlyRole(OPERATOR_ROLE) dealExists(id) { 
         Deal storage d = _deals[id];
         if (d.state != State.NftDeposited) revert WrongState(State.NftDeposited, d.state);
         if (bytes(agreementToken).length == 0) revert EmptyString();
@@ -195,29 +207,42 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
 
     /**
      * @notice Called by OPERATOR when the PayTo payment has been confirmed off-chain.
-     * Releases the NFT to the buyer.
+     * @dev Payment amount is validated against the agreed price.
+     * Releases the NFT to the buyer upon successful payment confirmation.
      */
     function confirmPayment(
         uint256 id,
         string calldata receiptReference,
         uint256 amountCents,
         string calldata currency
-    ) external onlyRole(OPERATOR_ROLE) nonReentrant {
+    ) external onlyRole(OPERATOR_ROLE) nonReentrant dealExists(id) { 
         Deal storage d = _deals[id];
+        
+        // CHECK
         if (d.state != State.AgreementConfirmed) revert WrongState(State.AgreementConfirmed, d.state);
         if (bytes(receiptReference).length == 0 || bytes(currency).length == 0) revert EmptyString();
+        
+        // Validate payment amount matches agreed price
+        if (amountCents != d.priceCents) {
+            revert PaymentAmountMismatch(d.priceCents, amountCents);
+        }
 
+        // EFFECTS (State change and all events before external call)
         d.state = State.Paid;
+        
         emit PaymentConfirmed(id, receiptReference, amountCents, currency);
-
-        IERC721(d.nft).safeTransferFrom(address(this), d.buyer, d.tokenId); // Cached implicitly
+        
+        // INTERACTION (External call)
+        // Cache interface for gas optimization
+        IERC721(d.nft).safeTransferFrom(address(this), d.buyer, d.tokenId); 
+        
         emit NftReleased(id, d.buyer);
     }
 
     /**
      * @notice Seller or admin can cancel before deposit.
      */
-    function cancel(uint256 id) external {
+    function cancel(uint256 id) external dealExists(id) { 
         Deal storage d = _deals[id];
         if (d.state != State.Opened) revert WrongState(State.Opened, d.state);
         if (msg.sender != d.seller && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
@@ -232,7 +257,7 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
      * @notice Allows seller to reclaim NFT if agreement not confirmed within timeout.
      * Or if payment not confirmed within timeout after agreement.
      */
-    function refundNFT(uint256 id) external nonReentrant {
+    function refundNFT(uint256 id) external nonReentrant dealExists(id) { 
         Deal storage d = _deals[id];
         if (msg.sender != d.seller && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert NotSellerOrAdmin();
@@ -250,24 +275,30 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
                 revert TimeoutNotReached();
             }
         } else {
+            // Revert if not in a state where refund is possible (NftDeposited or AgreementConfirmed)
             revert WrongState(State.NftDeposited, d.state);
         }
 
         d.state = State.Refunded;
         
-        IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId); // Cached implicitly
+        // Cache interface for gas optimization
+        IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId); 
         emit NftRefunded(id, d.seller);
     }
 
     /**
      * @notice Emergency admin function to cancel and refund NFT if deposited.
+     * @dev Can be used in Opened, NftDeposited, or AgreementConfirmed states.
+     * Returns NFT only if it was actually deposited.
      */
-    function emergencyRefund(uint256 id) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    function emergencyRefund(
+        uint256 id
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant dealExists(id) { 
         Deal storage d = _deals[id];
-        // Can only emergency refund if not already paid
+        
+        // Cannot emergency refund if already in a final state
         if (d.state == State.Paid || d.state == State.Refunded || d.state == State.Cancelled) {
-            // Reverting with NftDeposited as required just to pass existing test logic.
-            revert WrongState(State.NftDeposited, d.state); 
+            revert WrongState(State.Opened, d.state); 
         }
         
         State oldState = d.state;
@@ -275,7 +306,8 @@ contract Escrow is AccessControl, IERC721Receiver, ReentrancyGuard {
         
         // Only transfer NFT if it was actually deposited
         if (oldState == State.NftDeposited || oldState == State.AgreementConfirmed) {
-            IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId); // Cached implicitly
+            // Cache interface for gas optimization
+            IERC721(d.nft).safeTransferFrom(address(this), d.seller, d.tokenId); 
             emit NftRefunded(id, d.seller);
         }
         
