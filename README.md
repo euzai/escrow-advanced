@@ -21,8 +21,8 @@ In a real-world scenario, a relayer would be listening for these events. When an
 
 In the test script in this repo, the operator signer is used to simulate the relayer's actions. The lines 
 
-await escrow.connect(operator).confirmAgreement(...) and 
-await escrow.connect(operator).confirmPayment(...) 
+**await escrow.connect(operator).confirmAgreement(...)** and 
+**await escrow.connect(operator).confirmPayment(...)** 
 
 directly call the functions that the relayer would call in response to the events, allowing you to test the contract's entire "happy path" locally without needing a live relayer.
 Script is completed when it calls `confirmPayment()` to release the NFT to the buyer.
@@ -53,24 +53,24 @@ npx hardhat test
 ```
 
 ## Updates 20250930:
-Security Fix: Added NFT refund mechanisms with timeouts (7 days for agreement, 30 days for payment)
+1. Security Fix: Added NFT refund mechanisms with timeouts (7 days for agreement, 30 days for payment)
 
-Storage Optimisation: Removed redundant string storage, saving ~100+ gas per operation
+2. Storage Optimisation: Removed redundant string storage, saving ~100+ gas per operation
 
-Enhanced Validation: Added checks for zero prices, empty strings, and correlation ID verification
+3. Enhanced Validation: Added checks for zero prices, empty strings, and correlation ID verification
 
-Better State Management: Added Refunded state and new functions for timeout-based refunds
+4. Better State Management: Added Refunded state and new functions for timeout-based refunds
 
-Emergency Admin Tools: Added emergencyRefund() for stuck transactions
+5. Emergency Admin Tools: Added emergencyRefund() for stuck transactions
 
-Comprehensive Testing: Expanded from 1 test to 44 tests covering all edge cases. The comprehensive set of unit tests now covers the "Happy Path," input validation, access control, state transitions, and edge cases like timeouts and emergency refunds.
+6. Comprehensive Testing: Expanded from 1 test to 44 tests covering all edge cases. The comprehensive set of unit tests now covers the "Happy Path," input validation, access control, state transitions, and edge cases like timeouts and emergency refunds.
 
-Gas Savings:
+7. Gas Savings:
 - Reduced depositNFT gas by ~15k
 - Reduced confirmAgreement gas by ~10k
 - Optimized struct packing with uint64 timestamps
   
-Other Changes: Functions now require correlationIdRaw parameter for verification: **depositNFT(id, correlationIdRaw)** and **confirmAgreement(id, correlationIdRaw, agreementToken)**
+8. Other Changes: Functions now require correlationIdRaw parameter for verification: **depositNFT(id, correlationIdRaw)** and **confirmAgreement(id, correlationIdRaw, agreementToken)**
 
 ## Test outcomes
 <img width="904" height="979" alt="image" src="https://github.com/user-attachments/assets/8a751c3d-e3f3-4855-b030-e8d22e5bb25f" />
